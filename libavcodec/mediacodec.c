@@ -486,6 +486,203 @@ void av_android_surface_signal_frame(AVAndroidSurface *surface)
     pthread_mutex_unlock(&surface->lock);
 }
 
+struct JNIAndroidLooperFields {
+
+    jclass looper_class;
+    jmethodID prepare_id;
+    jmethodID my_looper_id;
+    jmethodID get_main_looper_id;
+    jmethodID loop_id;
+    jmethodID quit_id;
+
+} JNIAndroidLooperFields;
+
+static const struct FFJniField android_looper_mapping[] = {
+    { "android/os/Looper", NULL, NULL, FF_JNI_CLASS, offsetof(struct JNIAndroidLooperFields, looper_class), 1 },
+        { "android/os/Looper", "prepare", "()V", FF_JNI_STATIC_METHOD, offsetof(struct JNIAndroidLooperFields, prepare_id), 1 },
+        { "android/os/Looper", "myLooper", "()Landroid/os/Looper;", FF_JNI_STATIC_METHOD, offsetof(struct JNIAndroidLooperFields, my_looper_id), 1 },
+        { "android/os/Looper", "getMainLooper", "()Landroid/os/Looper;", FF_JNI_STATIC_METHOD, offsetof(struct JNIAndroidLooperFields, get_main_looper_id), 1 },
+        { "android/os/Looper", "loop", "()V", FF_JNI_STATIC_METHOD, offsetof(struct JNIAndroidLooperFields, loop_id), 1 },
+        { "android/os/Looper", "quit", "()V", FF_JNI_METHOD, offsetof(struct JNIAndroidLooperFields, quit_id), 1 },
+
+    { NULL }
+};
+
+typedef struct AndroidLooper {
+    const AVClass *class;
+    struct JNIAndroidLooperFields jfields;
+    jobject *looper;
+} AndroidLooper;
+
+static const AVClass android_looper_class = {
+    .class_name = "android_looper",
+    .item_name  = av_default_item_name,
+    .version    = LIBAVCODEC_VERSION_INT,
+};
+
+AVAndroidLooper *av_android_looper_new(void)
+{
+    JNIEnv *env = NULL;
+    AVAndroidLooper *ret = NULL;
+
+    ret = av_mallocz(sizeof(AVAndroidLooper));
+    if (!ret) {
+        return NULL;
+    }
+    ret->class = &android_looper_class;
+
+    env = ff_jni_get_env(ret);
+    if (!env) {
+        av_freep(&ret);
+        return NULL;
+    }
+
+    if (ff_jni_init_jfields(env, &ret->jfields, android_looper_mapping, 1, NULL) < 0) {
+        goto fail;
+    }
+
+    return ret;
+fail:
+    av_android_looper_free(&ret);
+
+    return NULL;
+}
+
+int av_android_looper_prepare(AVAndroidLooper *looper)
+{
+    int ret = 0;
+    JNIEnv *env = NULL;
+    jobject *my_looper = NULL;
+    jobject *main_looper = NULL;
+
+    if (!looper) {
+        return 0;
+    }
+
+    env = ff_jni_get_env(looper);
+    if (!env) {
+        return AVERROR_EXTERNAL;
+    }
+
+    (*env)->CallStaticVoidMethod(env,
+                                 looper->jfields.looper_class,
+                                 looper->jfields.prepare_id);
+    if (ff_jni_exception_check(env, 1, looper) < 0) {
+        ret = AVERROR_EXTERNAL;
+        goto fail;
+    }
+
+    my_looper = (*env)->CallStaticObjectMethod(env,
+                                               looper->jfields.looper_class,
+                                               looper->jfields.my_looper_id);
+    if (ff_jni_exception_check(env, 1, looper) < 0) {
+        ret = AVERROR_EXTERNAL;
+        goto fail;
+    }
+
+    main_looper = (*env)->CallStaticObjectMethod(env,
+                                                 looper->jfields.looper_class,
+                                                 looper->jfields.get_main_looper_id);
+    if (ff_jni_exception_check(env, 1, looper) < 0) {
+        ret = AVERROR_EXTERNAL;
+        goto fail;
+    }
+
+    looper->looper = (*env)->NewGlobalRef(env, my_looper);
+    if (!looper->looper) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+
+fail:
+    if (my_looper) {
+        (*env)->DeleteLocalRef(env, my_looper);
+        my_looper = NULL;
+    }
+
+    if (main_looper) {
+        (*env)->DeleteLocalRef(env, main_looper);
+        main_looper = NULL;
+    }
+
+    return ret;
+}
+
+int av_android_looper_loop(AVAndroidLooper *looper)
+{
+    int ret = 0;
+    JNIEnv *env = NULL;
+
+    if (!looper) {
+        return 0;
+    }
+
+    env = ff_jni_get_env(looper);
+    if (!env) {
+        return AVERROR_EXTERNAL;
+    }
+
+    (*env)->CallStaticVoidMethod(env,
+                                 looper->jfields.looper_class,
+                                 looper->jfields.loop_id);
+    if (ff_jni_exception_check(env, 1, looper) < 0) {
+        ret = AVERROR_EXTERNAL;
+        goto fail;
+    }
+
+fail:
+    return ret;
+}
+
+int av_android_looper_quit(AVAndroidLooper *looper)
+{
+    int ret = 0;
+    JNIEnv *env = NULL;
+
+    if (!looper) {
+        return 0;
+    }
+
+    env = ff_jni_get_env(looper);
+    if (!env) {
+        return AVERROR_EXTERNAL;
+    }
+
+    (*env)->CallVoidMethod(env,
+                           looper->looper,
+                           looper->jfields.quit_id);
+    if (ff_jni_exception_check(env, 1, looper) < 0) {
+        ret = AVERROR_EXTERNAL;
+        goto fail;
+    }
+
+fail:
+    return ret;
+}
+
+void av_android_looper_free(AVAndroidLooper **looper)
+{
+    JNIEnv *env = NULL;
+
+    if (!looper || !*looper) {
+        return;
+    }
+
+    env = ff_jni_get_env(*looper);
+    if (!env) {
+        av_freep(looper);
+        return;
+    }
+    if ((*looper)->looper) {
+        (*env)->DeleteGlobalRef(env, (*looper)->looper);
+        (*looper)->looper = NULL;
+    }
+
+    ff_jni_reset_jfields(env, &(*looper)->jfields, android_looper_mapping, 1, *looper);
+
+    av_freep(looper);
+}
+
 #else
 
 #include <stdlib.h>
@@ -539,6 +736,30 @@ int av_android_surface_render_buffer(AVAndroidSurface *surface, AVMediaCodecBuff
 }
 
 void av_android_surface_signal_frame(AVAndroidSurface *surface)
+{
+}
+
+AVAndroidLooper *av_android_looper_new()
+{
+    return NULL;
+}
+
+int av_android_looper_prepare(AVAndroidLooper *looper)
+{
+    return 0;
+}
+
+int av_android_looper_loop(AVAndroidLooper *looper)
+{
+    return 0;
+}
+
+int av_android_looper_quit(AVAndroidLooper *looper)
+{
+    return 0;
+}
+
+void av_android_looper_free(AVAndroidLooper **looper)
 {
 }
 
