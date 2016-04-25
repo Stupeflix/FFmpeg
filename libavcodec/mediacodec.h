@@ -98,4 +98,13 @@ int av_android_surface_detach_from_gl_context(AVAndroidSurface *surface);
 int av_android_surface_render_buffer(AVAndroidSurface *surface, AVMediaCodecBuffer *buffer, float *matrix);
 void av_android_surface_signal_frame(AVAndroidSurface *surface);
 
+
+typedef struct AndroidLooper AVAndroidLooper;
+
+AVAndroidLooper *av_android_looper_new(void);
+int av_android_looper_prepare(AVAndroidLooper *looper);
+int av_android_looper_loop(AVAndroidLooper *looper);
+int av_android_looper_quit(AVAndroidLooper *looper);
+void av_android_looper_free(AVAndroidLooper **looper);
+
 #endif /* AVCODEC_MEDIACODEC_H */
