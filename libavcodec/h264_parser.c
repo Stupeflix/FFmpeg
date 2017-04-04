@@ -417,8 +417,10 @@ static inline int parse_nal_units(AVCodecParserContext *s,
                 s->format = AV_PIX_FMT_NONE;
             }
 
-            avctx->profile = ff_h264_get_profile(sps);
-            avctx->level   = sps->level_idc;
+            avctx->profile             = ff_h264_get_profile(sps);
+            avctx->level               = sps->level_idc;
+            avctx->sample_aspect_ratio = sps->sar;
+            avctx->bits_per_raw_sample = sps->bit_depth_luma;
 
             if (sps->frame_mbs_only_flag) {
                 p->picture_structure = PICT_FRAME;
