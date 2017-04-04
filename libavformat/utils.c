@@ -3561,6 +3561,11 @@ static int extract_extradata(AVStream *st, AVPacket *pkt)
     return 0;
 }
 
+static int is_mediacodec_decoder(const AVCodec *codec)
+{
+    return codec && strstr(codec->name, "_mediacodec") != NULL;
+}
+
 int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
 {
     int i, count = 0, ret = 0, j;
@@ -3667,10 +3672,11 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
         // Try to just open decoders, in case this is enough to get parameters.
         if (!has_codec_parameters(st, NULL) && st->request_probe <= 0) {
-            if (codec && !avctx->codec)
+            if (codec && !avctx->codec && !is_mediacodec_decoder(codec)) {
                 if (avcodec_open2(avctx, codec, options ? &options[i] : &thread_opt) < 0)
                     av_log(ic, AV_LOG_WARNING,
                            "Failed to open codec in %s\n",__FUNCTION__);
+            }
         }
         if (!options)
             av_dict_free(&thread_opt);
@@ -3686,6 +3692,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
     read_size = 0;
     for (;;) {
+        const AVCodec *decoder;
         int analyzed_all_streams;
         if (ff_check_interrupt(&ic->interrupt_callback)) {
             ret = AVERROR_EXIT;
@@ -3888,6 +3895,30 @@ FF_ENABLE_DEPRECATION_WARNINGS
                 goto find_stream_info_err;
         }
 
+        decoder = avctx->codec ? avctx->codec : find_probe_decoder(ic, st, st->codecpar->codec_id);
+
+        if (st->parser && is_mediacodec_decoder(decoder)) {
+            AVCodecParserContext *parser = st->parser;
+
+            if (!st->need_parsing) {
+                uint8_t *data = NULL;
+                int data_size = 0;
+
+                av_parser_parse2(parser, avctx,
+                                 &data, &data_size, pkt->data, pkt->size,
+                                 pkt->pts, pkt->dts, pkt->pos);
+            }
+
+            if (parser->width > 0 && parser->height > 0) {
+                avctx->width  = parser->width;
+                avctx->height = parser->height;
+            }
+
+            if (parser->format != AV_PIX_FMT_NONE) {
+                avctx->pix_fmt = parser->format;
+            }
+        }
+
         /* If still no information, we try to open the codec and to
          * decompress the frame. We try to avoid that in most cases as
          * it takes longer and uses more memory. For MPEG-4, we need to
@@ -3897,8 +3928,10 @@ FF_ENABLE_DEPRECATION_WARNINGS
          * least one frame of codec data, this makes sure the codec initializes
          * the channel configuration and does not only trust the values from
          * the container. */
-        try_decode_frame(ic, st, pkt,
-                         (options && i < orig_nb_streams) ? &options[i] : NULL);
+        if (!is_mediacodec_decoder(decoder) || !has_codec_parameters(st, NULL)) {
+            try_decode_frame(ic, st, pkt,
+                             (options && i < orig_nb_streams) ? &options[i] : NULL);
+        }
 
         if (ic->flags & AVFMT_FLAG_NOBUFFER)
             av_packet_unref(pkt);
