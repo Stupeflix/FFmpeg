@@ -15,6 +15,10 @@ libavutil:     2017-10-21
 
 API changes, most recent first:
 
+2017-xx-xx - xxxxxxx - lavf 58.43.100 - avformat.h
+  Add avformat_new_side_data(), avformat_get_side_data(),
+  avformat_side_data_name().
+
 2020-06-05 - ec39c2276a - lavu 56.50.100 - buffer.h
   Passing NULL as alloc argument to av_buffer_pool_init2() is now allowed.
 
