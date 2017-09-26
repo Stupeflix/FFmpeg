@@ -15,6 +15,10 @@ libavutil:     2017-10-21
 
 API changes, most recent first:
 
+2017-xx-xx - xxxxxxx - lavf 58.21.100 - avformat.h
+  Add avformat_new_side_data(), avformat_get_side_data(),
+  avformat_side_data_name().
+
 -------- 8< --------- FFmpeg 4.2 was cut here -------- 8< ---------
 
 2019-06-21 - a30e44098a - lavu 56.30.100 - frame.h
