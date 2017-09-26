@@ -297,6 +297,7 @@ typedef struct MOVContext {
     int32_t movie_display_matrix[3][3]; ///< display matrix from mvhd
     int have_read_mfra_size;
     uint32_t mfra_size;
+    int export_udta;
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);
