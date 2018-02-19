@@ -314,6 +314,18 @@ static int vpx_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
 }
 #endif
 
+#if CONFIG_AAC_MEDIACODEC_DECODER
+static int aac_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
+{
+    if (avctx->extradata) {
+        ff_AMediaFormat_setBuffer(format, "csd-0", avctx->extradata, avctx->extradata_size);
+    }
+
+    return 0;
+}
+#endif
+
+
 static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
 {
     int ret;
@@ -385,19 +397,40 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
             goto done;
         break;
 #endif
+#if CONFIG_AAC_MEDIACODEC_DECODER
+    case AV_CODEC_ID_AAC:
+        codec_mime = "audio/mp4a-latm";
+
+        ret = aac_set_extradata(avctx, format);
+        if (ret < 0)
+            goto done;
+        break;
+#endif
     default:
         av_assert0(0);
     }
 
-    if (avctx->width <= 0 || avctx->height <= 0) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid codec dimensions %dx%d\n", avctx->width, avctx->height);
-        ret = AVERROR(EINVAL);
-        goto done;
-    }
-
     ff_AMediaFormat_setString(format, "mime", codec_mime);
-    ff_AMediaFormat_setInt32(format, "width", avctx->width);
-    ff_AMediaFormat_setInt32(format, "height", avctx->height);
+
+    if (avctx->codec_type == AVMEDIA_TYPE_VIDEO) {
+        if (avctx->width <= 0 || avctx->height <= 0) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid codec dimensions %dx%d\n", avctx->width, avctx->height);
+            ret = AVERROR(EINVAL);
+            goto done;
+        }
+
+        ff_AMediaFormat_setInt32(format, "width", avctx->width);
+        ff_AMediaFormat_setInt32(format, "height", avctx->height);
+    } else {
+        if (avctx->channels <= 0 || avctx->sample_rate <= 0) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid codec channels and sample rate %d, %d\n", avctx->channels, avctx->sample_rate);
+            ret = AVERROR(EINVAL);
+            goto done;
+        }
+        ff_AMediaFormat_setInt32(format, "channel-count", avctx->channels);
+        ff_AMediaFormat_setInt32(format, "sample-rate", avctx->sample_rate);
+        avctx->sample_fmt = AV_SAMPLE_FMT_S16;
+    }
 
     s->ctx = av_mallocz(sizeof(*s->ctx));
     if (!s->ctx) {
@@ -431,9 +464,39 @@ static int mediacodec_send_receive(AVCodecContext *avctx,
 {
     int ret;
 
+    if (avctx->codec_id == AV_CODEC_ID_AAC) {
+        AVPacket pkt;
+        uint8_t *data;
+        int data_size = 0;
+
+        data = av_packet_get_side_data(&s->buffered_pkt,
+                                       AV_PKT_DATA_NEW_EXTRADATA,
+                                       &data_size);
+        if (data_size) {
+#if 0
+            avctx->extradata = av_mallocz(data_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (!avctx->extradata)
+                return AVERROR(ENOMEM);
+#endif
+
+            pkt.data = data;
+            pkt.size = data_size;
+            pkt.pts  = s->buffered_pkt.pts;
+            while (pkt.size) {
+                ret = ff_mediacodec_dec_send(avctx, s->ctx, &pkt, true);
+                if (ret == AVERROR(EAGAIN))
+                    break;
+                if (ret < 0)
+                    return ret;
+                pkt.size -= ret;
+                pkt.data += ret;
+            }
+        }
+    }
+
     /* send any pending data from buffered packet */
     while (s->buffered_pkt.size) {
-        ret = ff_mediacodec_dec_send(avctx, s->ctx, &s->buffered_pkt);
+        ret = ff_mediacodec_dec_send(avctx, s->ctx, &s->buffered_pkt, false);
         if (ret == AVERROR(EAGAIN))
             break;
         if (ret < 0)
@@ -492,7 +555,7 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     ret = ff_decode_get_packet(avctx, &s->buffered_pkt);
     if (ret == AVERROR_EOF) {
         AVPacket null_pkt = { 0 };
-        ret = ff_mediacodec_dec_send(avctx, s->ctx, &null_pkt);
+        ret = ff_mediacodec_dec_send(avctx, s->ctx, &null_pkt, false);
         if (ret < 0)
             return ret;
     }
@@ -632,5 +695,25 @@ AVCodec ff_vp9_mediacodec_decoder = {
     .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS,
     .hw_configs     = mediacodec_hw_configs,
     .wrapper_name   = "mediacodec",
+};
+#endif
+
+#if CONFIG_AAC_MEDIACODEC_DECODER
+AVCodec ff_aac_mediacodec_decoder = {
+    .name           = "aac_mediacodec",
+    .long_name      = NULL_IF_CONFIG_SMALL("AAC Android MediaCodec decoder"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_AAC,
+    .priv_data_size = sizeof(MediaCodecH264DecContext),
+    .init           = mediacodec_decode_init,
+    .receive_frame  = mediacodec_receive_frame,
+    .flush          = mediacodec_decode_flush,
+    .close          = mediacodec_decode_close,
+    .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE },
+    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE | AV_CODEC_CAP_CHANNEL_CONF,
+    .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS,
+    .hw_configs     = mediacodec_hw_configs,
+    .wrapper_name   = "mediacodec",
+    .bsfs           = "aac_adtstoasc",
 };
 #endif

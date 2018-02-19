@@ -60,6 +60,10 @@ typedef struct MediaCodecDecContext {
     int crop_left;
     int crop_right;
 
+    int channel_count;
+    int channel_mask;
+    int sample_rate;
+
     uint64_t output_buffer_count;
 
 } MediaCodecDecContext;
@@ -71,7 +75,9 @@ int ff_mediacodec_dec_init(AVCodecContext *avctx,
 
 int ff_mediacodec_dec_send(AVCodecContext *avctx,
                            MediaCodecDecContext *s,
-                           AVPacket *pkt);
+                           AVPacket *pkt,
+                           bool codec_config);
+
 
 int ff_mediacodec_dec_receive(AVCodecContext *avctx,
                               MediaCodecDecContext *s,
