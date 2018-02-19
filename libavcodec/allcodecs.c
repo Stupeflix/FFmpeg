@@ -523,6 +523,7 @@ static void register_all(void)
 
     /* external libraries */
     REGISTER_ENCDEC (AAC_AT,            aac_at);
+    REGISTER_DECODER(AAC_MEDIACODEC,    aac_mediacodec);
     REGISTER_DECODER(AC3_AT,            ac3_at);
     REGISTER_DECODER(ADPCM_IMA_QT_AT,   adpcm_ima_qt_at);
     REGISTER_ENCDEC (ALAC_AT,           alac_at);
