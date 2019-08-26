@@ -86,6 +86,32 @@
 #define OUTPUT_DEQUEUE_BLOCK_TIMEOUT_US 1000000
 
 enum {
+    COLOR_RANGE_FULL    = 0x1,
+    COLOR_RANGE_LIMITED = 0x2,
+    COLOR_RANGE_NB
+};
+
+static const int color_range_map[COLOR_RANGE_NB] = {
+    [COLOR_RANGE_FULL]    = AVCOL_RANGE_JPEG,
+    [COLOR_RANGE_LIMITED] = AVCOL_RANGE_MPEG,
+};
+
+enum {
+    COLOR_STANDARD_BT709      = 0x1,
+    COLOR_STANDARD_BT601_PAL  = 0x2,
+    COLOR_STANDARD_BT601_NTSC = 0x4,
+    COLOR_STANDARD_BT2020     = 0x6,
+    COLOR_STANDARD_NB
+};
+
+static const int color_standard_map[COLOR_STANDARD_NB] = {
+    [COLOR_STANDARD_BT709]      = AVCOL_SPC_BT709,
+    [COLOR_STANDARD_BT601_PAL]  = AVCOL_SPC_BT470BG,
+    [COLOR_STANDARD_BT601_NTSC] = AVCOL_SPC_SMPTE170M,
+    [COLOR_STANDARD_BT2020]     = AVCOL_SPC_BT2020_CL,
+};
+
+enum {
     COLOR_FormatYUV420Planar                              = 0x13,
     COLOR_FormatYUV420SemiPlanar                          = 0x15,
     COLOR_FormatYCbYCr                                    = 0x19,
@@ -368,6 +394,8 @@ static int mediacodec_dec_parse_format(AVCodecContext *avctx, MediaCodecDecConte
     int ret = 0;
     int width = 0;
     int height = 0;
+    int color_range = 0;
+    int color_standard = 0;
     char *format = NULL;
 
     if (!s->format) {
@@ -425,6 +453,14 @@ static int mediacodec_dec_parse_format(AVCodecContext *avctx, MediaCodecDecConte
             (AVRational){ width, height });
         ff_set_sar(avctx, sar);
     }
+
+    AMEDIAFORMAT_GET_INT32(color_range, "color-range", 0);
+    if (color_range > 0 && color_range < COLOR_RANGE_NB)
+        avctx->color_range = color_range_map[color_range];
+
+    AMEDIAFORMAT_GET_INT32(color_standard, "color-standard", 0);
+    if (color_standard > 0 && color_standard < COLOR_STANDARD_NB)
+        avctx->colorspace = color_standard_map[color_standard];
 
     av_log(avctx, AV_LOG_INFO,
         "Output crop parameters top=%d bottom=%d left=%d right=%d, "
