@@ -631,7 +631,7 @@ int ff_mediacodec_dec_send(AVCodecContext *avctx, MediaCodecDecContext *s,
                            AVPacket *pkt, bool wait)
 {
     int offset = 0;
-    int need_draining = 0;
+    int need_draining = pkt->size == 0;
     uint8_t *data;
     ssize_t index = s->current_input_buffer;
     size_t size;
@@ -644,10 +644,6 @@ int ff_mediacodec_dec_send(AVCodecContext *avctx, MediaCodecDecContext *s,
         av_log(avctx, AV_LOG_ERROR, "Decoder is flushing and cannot accept new buffer "
                                     "until all output buffers have been released\n");
         return AVERROR_EXTERNAL;
-    }
-
-    if (pkt->size == 0) {
-        need_draining = 1;
     }
 
     if (s->draining && s->eos) {
