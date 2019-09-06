@@ -630,7 +630,6 @@ fail:
 int ff_mediacodec_dec_send(AVCodecContext *avctx, MediaCodecDecContext *s,
                            AVPacket *pkt, bool wait)
 {
-    int offset = 0;
     int need_draining = pkt->size == 0;
     uint8_t *data;
     ssize_t index = s->current_input_buffer;
@@ -650,12 +649,15 @@ int ff_mediacodec_dec_send(AVCodecContext *avctx, MediaCodecDecContext *s,
         return AVERROR_EOF;
     }
 
-    while (offset < pkt->size || (need_draining && !s->draining)) {
+    if (s->draining) {
+        return 0;
+    }
+
         if (index < 0) {
             index = ff_AMediaCodec_dequeueInputBuffer(codec, input_dequeue_timeout_us);
             if (ff_AMediaCodec_infoTryAgainLater(codec, index)) {
                 av_log(avctx, AV_LOG_TRACE, "No input buffer available, try again later\n");
-                break;
+                return AVERROR(EAGAIN);
             }
 
             if (index < 0) {
@@ -694,9 +696,8 @@ int ff_mediacodec_dec_send(AVCodecContext *avctx, MediaCodecDecContext *s,
             return 0;
         }
 
-        size = FFMIN(pkt->size - offset, size);
-        memcpy(data, pkt->data + offset, size);
-        offset += size;
+        size = FFMIN(pkt->size, size);
+        memcpy(data, pkt->data, size);
 
         status = ff_AMediaCodec_queueInputBuffer(codec, index, 0, size, pts, 0);
         if (status < 0) {
@@ -706,11 +707,8 @@ int ff_mediacodec_dec_send(AVCodecContext *avctx, MediaCodecDecContext *s,
 
         av_log(avctx, AV_LOG_TRACE,
                "Queued input buffer %zd size=%zd ts=%"PRIi64"\n", index, size, pts);
-    }
 
-    if (offset == 0)
-        return AVERROR(EAGAIN);
-    return offset;
+    return size;
 }
 
 int ff_mediacodec_dec_receive(AVCodecContext *avctx, MediaCodecDecContext *s,
