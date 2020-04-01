@@ -787,6 +787,7 @@ static int jpeg_probe(const AVProbeData *p)
                 return 0;
             state = EOI;
             break;
+        case DHT:
         case DQT:
         case APP0:
         case APP1:
